@@ -35,7 +35,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 # Flask for Part 9 Web Interface
 try:
-    from flask import Flask, render_template, request, jsonify
+    from flask import Flask, render_template, request, jsonify, send_from_directory
     HAS_FLASK = True
 except ImportError:
     HAS_FLASK = False
@@ -605,11 +605,16 @@ rag_pipeline = RAGChatbotPipeline(vector_db)
 # ---------------------------------------------------------------------------
 # Part 9: Web Server Setup
 # ---------------------------------------------------------------------------
-app = Flask(__name__, template_folder="templates")
+app = Flask(__name__, static_folder="frontend/dist", static_url_path="", template_folder="frontend/dist")
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    try:
+        return send_from_directory(app.template_folder, "index.html")
+    except Exception:
+        # Fallback to old templates directory if React is not built
+        app.template_folder = "templates"
+        return render_template("index.html")
 
 @app.route("/api/status", methods=["GET"])
 def get_status():

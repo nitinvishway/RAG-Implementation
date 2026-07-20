@@ -15,7 +15,6 @@ vector_db/
 
 # Frontend
 frontend/node_modules/
-frontend/dist/
 frontend/.cache/
 frontend/dist-ssr/
 frontend/*.local
