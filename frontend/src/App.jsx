@@ -187,9 +187,6 @@ function App() {
         <div className="header-title">
           <button className="panel-toggle" onClick={toggleLeft}>☰ Docs</button>
           <h1>RAG Chatbot Dashboard</h1>
-          <div className="status-badge">
-            <span className="status-dot"></span> FAISS Vector Engine Active
-          </div>
         </div>
         
         <div className="header-right">
