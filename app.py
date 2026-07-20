@@ -622,6 +622,10 @@ def home():
         fallback_folder = os.path.join(BASE_DIR, "templates")
         return send_from_directory(fallback_folder, "index.html")
 
+@app.route("/assets/<path:path>")
+def serve_assets(path):
+    return send_from_directory(os.path.join(app.static_folder, "assets"), path)
+
 @app.route("/api/status", methods=["GET"])
 def get_status():
     data_files = os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else []
