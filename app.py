@@ -60,10 +60,11 @@ except ImportError:
 # Directories matching Page 27-28 of PDF tutorial
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-VECTOR_DB_DIR = os.path.join(BASE_DIR, "vector_db")
-
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(VECTOR_DB_DIR, exist_ok=True)
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(VECTOR_DB_DIR, exist_ok=True)
+except Exception as e:
+    print(f"[Warning] Failed to create directories (read-only filesystem): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -85,40 +86,52 @@ def restore_text(text: str) -> str:
 
 def load_and_preprocess_documents(data_path: str = DATA_DIR) -> List[Document]:
     documents: List[Document] = []
-    if not os.path.exists(data_path):
-        return documents
+    
+    paths_to_check = [data_path]
+    # Check /tmp/data on Vercel
+    if 'VERCEL' in os.environ:
+        tmp_data = "/tmp/data"
+        if os.path.exists(tmp_data) and tmp_data not in paths_to_check:
+            paths_to_check.append(tmp_data)
 
-    for file_name in os.listdir(data_path):
-        file_path = os.path.join(data_path, file_name)
-        if not os.path.isfile(file_path):
+    seen_files = set()
+    for path in paths_to_check:
+        if not os.path.exists(path):
             continue
-
-        raw_text = ""
-        try:
-            if file_name.endswith('.txt'):
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    raw_text = f.read()
-            elif file_name.endswith('.pdf'):
-                try:
-                    import pypdf
-                    reader = pypdf.PdfReader(file_path)
-                    raw_text = "\n".join([page.extract_text() or "" for page in reader.pages])
-                except Exception as e:
-                    print(f"[Warning] Could not extract PDF {file_name}: {e}")
-                    continue
-            else:
+        for file_name in os.listdir(path):
+            if file_name in seen_files:
+                continue
+            file_path = os.path.join(path, file_name)
+            if not os.path.isfile(file_path):
                 continue
 
-            cleaned_content = preprocess_text(raw_text)
-            if cleaned_content:
-                doc = Document(
-                    page_content=cleaned_content,
-                    metadata={"source": file_path, "filename": file_name, "cleaned": True}
-                )
-                documents.append(doc)
+            raw_text = ""
+            try:
+                if file_name.endswith('.txt'):
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        raw_text = f.read()
+                elif file_name.endswith('.pdf'):
+                    try:
+                        import pypdf
+                        reader = pypdf.PdfReader(file_path)
+                        raw_text = "\n".join([page.extract_text() or "" for page in reader.pages])
+                    except Exception as e:
+                        print(f"[Warning] Could not extract PDF {file_name}: {e}")
+                        continue
+                else:
+                    continue
 
-        except Exception as e:
-            print(f"[Warning] Error reading {file_name}: {e}")
+                cleaned_content = preprocess_text(raw_text)
+                if cleaned_content:
+                    doc = Document(
+                        page_content=cleaned_content,
+                        metadata={"source": file_path, "filename": file_name, "cleaned": True}
+                    )
+                    documents.append(doc)
+                    seen_files.add(file_name)
+
+            except Exception as e:
+                print(f"[Warning] Error reading {file_name}: {e}")
 
     return documents
 
@@ -246,15 +259,23 @@ class RAGVectorDatabase:
         self.save_fallback()
 
     def save_fallback(self, path: str = VECTOR_DB_DIR):
-        index_file = os.path.join(path, "index.pkl")
-        with open(index_file, "wb") as f:
-            pickle.dump(self.fallback_store, f)
+        try:
+            os.makedirs(path, exist_ok=True)
+            index_file = os.path.join(path, "index.pkl")
+            with open(index_file, "wb") as f:
+                pickle.dump(self.fallback_store, f)
+        except Exception as e:
+            print(f"[Warning] Failed to save fallback store (probably read-only filesystem): {e}")
 
     def save(self, path: str = VECTOR_DB_DIR):
-        if self.use_langchain_faiss and self.vector_store:
-            self.vector_store.save_local(path)
-        else:
-            self.save_fallback(path)
+        try:
+            if self.use_langchain_faiss and self.vector_store:
+                os.makedirs(path, exist_ok=True)
+                self.vector_store.save_local(path)
+            else:
+                self.save_fallback(path)
+        except Exception as e:
+            print(f"[Warning] Failed to save vector store: {e}")
 
     def load(self, path: str = VECTOR_DB_DIR) -> bool:
         if self.use_langchain_faiss:
@@ -639,7 +660,16 @@ def upload_endpoint():
     if file.filename == "":
         return jsonify({"error": "No file selected."}), 400
 
-    file_path = os.path.join(DATA_DIR, file.filename)
+    # Write to /tmp on Vercel
+    target_dir = DATA_DIR
+    if 'VERCEL' in os.environ:
+        target_dir = "/tmp/data"
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except Exception:
+            pass
+
+    file_path = os.path.join(target_dir, file.filename)
     file.save(file_path)
 
     docs = load_and_preprocess_documents()
