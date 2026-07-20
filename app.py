@@ -41,25 +41,29 @@ except ImportError:
     HAS_FLASK = False
 
 # LangChain & FAISS components
-try:
-    from langchain_community.document_loaders import TextLoader, PyPDFLoader
-    from langchain_core.documents import Document
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from langchain_community.embeddings import HuggingFaceEmbeddings
-    from langchain_community.vectorstores import FAISS
-    HAS_LANGCHAIN = True
-except ImportError:
+if 'VERCEL' in os.environ:
     HAS_LANGCHAIN = False
+else:
+    try:
+        from langchain_community.document_loaders import TextLoader, PyPDFLoader
+        from langchain_core.documents import Document
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_community.vectorstores import FAISS
+        HAS_LANGCHAIN = True
+    except ImportError:
+        HAS_LANGCHAIN = False
 
+if not HAS_LANGCHAIN:
     @dataclass
     class Document:
         page_content: str
         metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-# Directories matching Page 27-28 of PDF tutorial
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+VECTOR_DB_DIR = os.path.join(BASE_DIR, "vector_db")
 try:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(VECTOR_DB_DIR, exist_ok=True)
