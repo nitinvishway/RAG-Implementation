@@ -605,16 +605,22 @@ rag_pipeline = RAGChatbotPipeline(vector_db)
 # ---------------------------------------------------------------------------
 # Part 9: Web Server Setup
 # ---------------------------------------------------------------------------
-app = Flask(__name__, static_folder="frontend/dist", static_url_path="", template_folder="frontend/dist")
+app = Flask(
+    __name__, 
+    static_folder=os.path.join(BASE_DIR, "frontend", "dist"),
+    static_url_path="",
+    template_folder=os.path.join(BASE_DIR, "frontend", "dist")
+)
 
 @app.route("/")
 def home():
     try:
         return send_from_directory(app.template_folder, "index.html")
-    except Exception:
-        # Fallback to old templates directory if React is not built
-        app.template_folder = "templates"
-        return render_template("index.html")
+    except Exception as e:
+        print(f"[Warning] Failed to serve React frontend: {e}")
+        # Fallback to old templates directory if React is not found
+        fallback_folder = os.path.join(BASE_DIR, "templates")
+        return send_from_directory(fallback_folder, "index.html")
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
