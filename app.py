@@ -580,84 +580,83 @@ rag_pipeline = RAGChatbotPipeline(vector_db)
 # ---------------------------------------------------------------------------
 # Part 9: Web Server Setup
 # ---------------------------------------------------------------------------
-if HAS_FLASK:
-    app = Flask(__name__, template_folder="templates")
+app = Flask(__name__, template_folder="templates")
 
-    @app.route("/")
-    def home():
-        return render_template("index.html")
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-    @app.route("/api/status", methods=["GET"])
-    def get_status():
-        data_files = os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else []
-        return jsonify({
-            "status": "active",
-            "documents_loaded": len(data_files),
-            "files": data_files,
-            "faiss_enabled": vector_db.use_langchain_faiss,
-            "has_gemini_key": bool(os.environ.get("GEMINI_API_KEY")),
-            "has_openai_key": bool(os.environ.get("OPENAI_API_KEY"))
+@app.route("/api/status", methods=["GET"])
+def get_status():
+    data_files = os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else []
+    return jsonify({
+        "status": "active",
+        "documents_loaded": len(data_files),
+        "files": data_files,
+        "faiss_enabled": vector_db.use_langchain_faiss,
+        "has_gemini_key": bool(os.environ.get("GEMINI_API_KEY")),
+        "has_openai_key": bool(os.environ.get("OPENAI_API_KEY"))
+    })
+
+@app.route("/api/chat", methods=["POST"])
+def chat_endpoint():
+    data = request.get_json() or {}
+    user_query = data.get("question", "").strip()
+    user_api_key = data.get("api_key", "").strip()
+
+    if not user_query:
+        return jsonify({"error": "Question is required."}), 400
+
+    response_data = rag_pipeline.generate_response(user_query, api_key=user_api_key)
+    return jsonify(response_data)
+
+@app.route("/api/search", methods=["POST"])
+def search_endpoint():
+    data = request.get_json() or {}
+    query = data.get("query", "").strip()
+    top_k = int(data.get("top_k", 5))
+
+    if not query:
+        return jsonify({"error": "Query is required."}), 400
+
+    results = vector_db.similarity_search(query, top_k=top_k)
+    output = []
+    for doc, score in results:
+        output.append({
+            "content": restore_text(doc.page_content),
+            "source": doc.metadata.get("source", doc.metadata.get("filename", "unknown")),
+            "similarity_score": float(score)
         })
 
-    @app.route("/api/chat", methods=["POST"])
-    def chat_endpoint():
-        data = request.get_json() or {}
-        user_query = data.get("question", "").strip()
-        user_api_key = data.get("api_key", "").strip()
+    return jsonify({"query": query, "results": output})
 
-        if not user_query:
-            return jsonify({"error": "Question is required."}), 400
+@app.route("/api/upload", methods=["POST"])
+def upload_endpoint():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded."}), 400
+    
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected."}), 400
 
-        response_data = rag_pipeline.generate_response(user_query, api_key=user_api_key)
-        return jsonify(response_data)
+    file_path = os.path.join(DATA_DIR, file.filename)
+    file.save(file_path)
 
-    @app.route("/api/search", methods=["POST"])
-    def search_endpoint():
-        data = request.get_json() or {}
-        query = data.get("query", "").strip()
-        top_k = int(data.get("top_k", 5))
+    docs = load_and_preprocess_documents()
+    chunks = split_documents_into_chunks(docs)
+    vector_db.build_or_update(chunks)
 
-        if not query:
-            return jsonify({"error": "Query is required."}), 400
+    return jsonify({
+        "message": f"Successfully uploaded '{file.filename}' and updated vector database.",
+        "total_chunks": len(chunks)
+    })
 
-        results = vector_db.similarity_search(query, top_k=top_k)
-        output = []
-        for doc, score in results:
-            output.append({
-                "content": restore_text(doc.page_content),
-                "source": doc.metadata.get("source", doc.metadata.get("filename", "unknown")),
-                "similarity_score": float(score)
-            })
-
-        return jsonify({"query": query, "results": output})
-
-    @app.route("/api/upload", methods=["POST"])
-    def upload_endpoint():
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded."}), 400
-        
-        file = request.files["file"]
-        if file.filename == "":
-            return jsonify({"error": "No file selected."}), 400
-
-        file_path = os.path.join(DATA_DIR, file.filename)
-        file.save(file_path)
-
-        docs = load_and_preprocess_documents()
-        chunks = split_documents_into_chunks(docs)
-        vector_db.build_or_update(chunks)
-
-        return jsonify({
-            "message": f"Successfully uploaded '{file.filename}' and updated vector database.",
-            "total_chunks": len(chunks)
-        })
-
-    @app.route("/api/reindex", methods=["POST"])
-    def reindex_endpoint():
-        docs = load_and_preprocess_documents()
-        chunks = split_documents_into_chunks(docs)
-        vector_db.build_or_update(chunks)
-        return jsonify({"message": "Re-indexing complete.", "total_chunks": len(chunks)})
+@app.route("/api/reindex", methods=["POST"])
+def reindex_endpoint():
+    docs = load_and_preprocess_documents()
+    chunks = split_documents_into_chunks(docs)
+    vector_db.build_or_update(chunks)
+    return jsonify({"message": "Re-indexing complete.", "total_chunks": len(chunks)})
 
 
 # ---------------------------------------------------------------------------
